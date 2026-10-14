@@ -138,7 +138,7 @@ input{background:var(--ink);border:1px solid var(--line);color:var(--text);font:
 'use strict';
 //#ENGINE-START
 var LIVEKEY='larueda.live.v2', SIMKEY='larueda.sim.v2', KEY=LIVEKEY, CAP=1000000, COM=0.005, DER=0.00045, IVA=0.21, FEE=(0.005+0.00045)*1.21, HS={acc:0.0015,ced:0.002,bon:0.001,fx:0.0005}, TAXBON=0.15, WARM=26, HMAX=120, EQMAX=500, DAYTICKS=360, LIVE_MS=15000;
-var CAT={acc:'Acciones',ced:'CEDEARs',bon:'Bonos',fx:'Dólar'};
+var CAT={acc:'Acciones',ced:'CEDEARs',usa:'Top EE.UU.',bon:'Bonos',fx:'Dólar'};
 var BETA={acc:1,ced:0.6,bon:0.4,fx:0.1};
 var INST=[
  {s:'GGAL',n:'Grupo Galicia',c:'acc',p:5940,v:0.0013},{s:'YPFD',n:'YPF',c:'acc',p:8065,v:0.0012},
@@ -151,6 +151,21 @@ var INST=[
  {s:'NVDA',n:'Nvidia',c:'ced',p:15460,v:0.0013},{s:'MELI',n:'Mercado Libre',c:'ced',p:25360,v:0.0011},
  {s:'TSLA',n:'Tesla',c:'ced',p:41260,v:0.0016},{s:'KO',n:'Coca-Cola',c:'ced',p:28500,v:0.0007},
  {s:'SPY',n:'S&P 500 (ETF)',c:'ced',p:20970,v:0.0006},{s:'AMZN',n:'Amazon',c:'ced',p:2950,v:0.001},
+ {s:'GOOGL',n:'Alphabet',c:'ced',g:'usa',p:9780,v:0.001},
+ {s:'META',n:'Meta',c:'ced',g:'usa',p:49680,v:0.001},
+ {s:'AVGO',n:'Broadcom',c:'ced',g:'usa',p:14450,v:0.001},
+ {s:'BRKB',n:'Berkshire Hathaway',c:'ced',g:'usa',p:38400,v:0.001},
+ {s:'LLY',n:'Eli Lilly',c:'ced',g:'usa',p:34920,v:0.001},
+ {s:'JPM',n:'JPMorgan',c:'ced',g:'usa',p:35960,v:0.001},
+ {s:'V',n:'Visa',c:'ced',g:'usa',p:35240,v:0.001},
+ {s:'WMT',n:'Walmart',c:'ced',g:'usa',p:10290,v:0.001},
+ {s:'XOM',n:'Exxon Mobil',c:'ced',g:'usa',p:28580,v:0.001},
+ {s:'MA',n:'Mastercard',c:'ced',g:'usa',p:29580,v:0.001},
+ {s:'ORCL',n:'Oracle',c:'ced',g:'usa',p:71775,v:0.001},
+ {s:'NFLX',n:'Netflix',c:'ced',g:'usa',p:2362,v:0.001},
+ {s:'COST',n:'Costco',c:'ced',g:'usa',p:32720,v:0.001},
+ {s:'JNJ',n:'Johnson & Johnson',c:'ced',g:'usa',p:27220,v:0.001},
+ {s:'PG',n:'Procter & Gamble',c:'ced',g:'usa',p:16720,v:0.001},
  {s:'AL30',n:'Bonar 2030',c:'bon',p:86600,v:0.0005},{s:'GD30',n:'Global 2030',c:'bon',p:88750,v:0.0005},
  {s:'AL35',n:'Bonar 2035',c:'bon',p:110100,v:0.0006},{s:'GD35',n:'Global 2035',c:'bon',p:116350,v:0.0006},
  {s:'AE38',n:'Bonar 2038',c:'bon',p:115310,v:0.0006},{s:'AL41',n:'Bonar 2041',c:'bon',p:102430,v:0.0007},
@@ -512,7 +527,7 @@ function rowHTML(i){
 }
 function renderMarket(){
   $('#pills').innerHTML=Object.keys(CAT).map(function(k){return '<button class="pill" data-cat="'+k+'" aria-pressed="'+(ui.cat===k)+'">'+CAT[k]+'</button>';}).join('');
-  $('#list').innerHTML=INST.filter(function(i){return i.c===ui.cat;}).map(rowHTML).join('');
+  $('#list').innerHTML=INST.filter(function(i){return (i.g||i.c)===ui.cat;}).map(rowHTML).join('');
   refresh();
 }
 function tradeLines(n){
