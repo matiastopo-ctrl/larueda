@@ -162,7 +162,8 @@ function bid(s){return S.prices[s]*(1-HS[BY[s].c]);}
 function ul(s){return BY[s].c==='bon'?'× 100 VN':'u.';}
 var ADV={
  paciente:{n:'Paciente',d:'El bot entrenado con 1.000.000 de jornadas simuladas y costos reales. Entra solo con tendencias muy fuertes, hasta 3 posiciones a la vez, y casi siempre te dice que esperes.'},
- lobo:{n:'Lobo',d:'Más activo que el Paciente: entra con tendencias fuertes, hasta 6 posiciones, usa stop móvil y dimensiona cada posición según la volatilidad. Avisa más seguido y también paga más costos.'}
+ lobo:{n:'Lobo',d:'Más activo que el Paciente: entra con tendencias fuertes, hasta 6 posiciones, usa stop móvil y dimensiona cada posición según la volatilidad. Avisa más seguido y también paga más costos.'},
+ agresivo:{n:'Agresivo',d:'Receta simple de señales para ver más avisos: entra con una sola señal a favor y tendencia positiva, hasta 6 posiciones de 15% de la cartera cada una, corta pérdidas en −3% y toma ganancia en +4%. Opera mucho y paga muchos costos. No pasó por el entrenamiento.'}
 };
 var S=null, drift={}, lastLab={}, liveActive=false, liveFail=0;
 
@@ -189,7 +190,7 @@ function warm(){for(var k=0;k<40;k++)priceStep();S.open=Object.assign({},S.price
 function fresh(mode){
   var prices={},hist={};
   INST.forEach(function(i){prices[i.s]=i.p;hist[i.s]=[i.p];});
-  S={v:2,mode:mode||'live',advisor:'paciente',alerts:true,paused:false,speed:1,day:1,tick:0,step:0,staleN:0,dayKey:'',lastMin:0,
+  S={v:2,mode:mode||'live',advisor:'agresivo',alerts:true,paused:false,speed:1,day:1,tick:0,step:0,staleN:0,dayKey:'',lastMin:0,
      cash:{you:CAP},pos:{you:{}},trades:[],log:[],eq:{you:[CAP]},days:[],dayStart:{you:CAP},
      prices:prices,hist:hist,open:Object.assign({},prices),openSet:false,hasLive:false,
      preds:[],stats:{n:0,hit:0},cool:{},ign:{},costs:{you:{com:0,der:0,iva:0,spr:0}},bonPnl:{you:0}};
@@ -295,7 +296,8 @@ function loboBuy(who,x){
   var w=Math.min(L.maxSize,L.risk/stopd),a=ask(x.i.s),budget=Math.min(eq*w,S.cash[who]-eq*0.05),q=Math.floor(budget/(a*(1+FEE))),hard=Math.max(0.02,L.stopK*stopd/2);
   return {q:q,w:w,px:a,hard:hard,stop:a*(1-hard),why:'Tendencia fuerte (z '+x.d.z.toFixed(1)+', RSI '+Math.round(x.d.r)+', vol '+(x.d.v*100).toFixed(2)+'%/min). Tamaño por riesgo: '+(w*100).toFixed(1)+'% de la cartera.'};
 }
-function advParams(){return S.advisor==='lobo'?LOBO:LOBO_PAC;}
+var AGG={size:0.15,maxPos:6,stop:0.03,tp:0.04,th:1,cool:20};
+function advParams(){return S.advisor==='agresivo'?AGG:S.advisor==='lobo'?LOBO:LOBO_PAC;}
 function ign(k){return (S.ign[k]||0)>S.step;}
 function adviceState(){
   if(S.mode==='live'&&!S.hasLive)return 'nodata';
@@ -303,11 +305,33 @@ function adviceState(){
   if(S.hist.GGAL.length<WARM)return 'warm';
   return 'ok';
 }
+function aggAdvice(st){
+  var held=S.pos.you,sells=[],buys=[],eq=equity('you'),m=minuteNow();
+  Object.keys(held).forEach(function(s){
+    var ps=held[s],net=bid(s)*(1-FEE)/ps.avg-1,sg=signal(s),why=null;
+    if(net<=-AGG.stop)why='Corta pérdida ('+pct(net)+').';
+    else if(net>=AGG.tp)why='Toma ganancia ('+pct(net)+').';
+    else if(sg.lab!=='…'&&sg.score<=-2)why='Señal de venta: '+sg.why;
+    if(why&&!ign('s:'+s))sells.push({side:'sell',s:s,q:ps.q,px:bid(s),why:why});
+  });
+  if(st==='ok'&&m>=675&&m<=1005&&Object.keys(held).length<AGG.maxPos){
+    INST.filter(function(i){return i.c!=='fx'&&!held[i.s]&&(S.cool[i.s]||0)<=S.step&&!ign('b:'+i.s);})
+     .map(function(i){return {i:i,sg:signal(i.s)};})
+     .filter(function(x){return x.sg.lab!=='…'&&x.sg.score>=AGG.th&&x.sg.mom>0;})
+     .sort(function(a,b){return b.sg.score-a.sg.score||b.sg.mom-a.sg.mom;})
+     .slice(0,2).forEach(function(x){
+       var a=ask(x.i.s),budget=Math.min(eq*AGG.size,S.cash.you-eq*0.03),q=Math.floor(budget/(a*(1+FEE)));
+       if(q>=1)buys.push({side:'buy',s:x.i.s,q:q,w:AGG.size,px:a,stop:a*(1-AGG.stop),hard:AGG.stop,why:'Señal a favor: '+x.sg.why+'. Posición de '+(AGG.size*100).toFixed(0)+'% de la cartera.'});
+     });
+  }
+  return {st:st,sells:sells,buys:buys,outside:(m<675||m>1005),warmLeft:Math.max(0,WARM-S.hist.GGAL.length)};
+}
 function loboAdvice(){
   var L=advParams(),prev=LACT;LACT=L;
   try{
     var st=adviceState(),held=S.pos.you,sells=[],buys=[];
     if(st==='nodata'||st==='closed')return {st:st,sells:sells,buys:buys};
+    if(S.advisor==='agresivo')return aggAdvice(st);
     Object.keys(held).forEach(function(s){var w=loboExit(held[s],s);if(w&&!ign('s:'+s))sells.push({side:'sell',s:s,q:held[s].q,px:bid(s),why:w});});
     if(st==='ok'&&Object.keys(held).length<L.maxPos){
       loboCands('you',held).slice(0,2).forEach(function(x){var b=loboBuy('you',x);if(b.q>=1&&!ign('b:'+x.i.s))buys.push({side:'buy',s:x.i.s,q:b.q,w:b.w,px:b.px,stop:b.stop,hard:b.hard,why:b.why});});
@@ -525,7 +549,7 @@ function renderBot(){
    +'<div class="seg">'+Object.keys(ADV).map(function(k){return '<button data-adv-bot="'+k+'" aria-pressed="'+(S.advisor===k)+'">'+ADV[k].n+'</button>';}).join('')+'</div>'
    +'<p class="mute small" style="margin-top:8px">'+ADV[S.advisor].d+'</p>'
    +'<div class="h2">Qué mira</div><p class="small mute">Tendencia (promedios de 8 y 24 minutos), fuerza de esa tendencia frente a la volatilidad, RSI y momentum. Toma un precio por minuto, así que necesita unos 26 minutos de rueda abierta antes de poder avisar compras. Solo propone entrar entre las 11:15 y las 16:45. Los stops de tus posiciones los vigila desde el primer minuto.</p>'
-   +'<div class="h2">Qué dijo el entrenamiento</div><p class="small mute">En 1.000.000 de jornadas simuladas con $ 100.000 y costos reales, ninguna configuración ganó plata en un día. El Paciente quedó en $ 0 por día (0,01 operaciones); el Lobo perdió $ 108 por día en promedio. Eso pasó con precios simulados: con el mercado real todavía no hay una medición. Por eso conviene empezar con montos chicos y mirar cuánto se llevan los costos.</p>'
+   +'<div class="h2">Qué dijo el entrenamiento</div><p class="small mute">El entrenamiento corrió 1.000.000 de jornadas simuladas (con $ 100.000 cada una, solo como muestra) y costos reales: ninguna configuración ganó plata en un día. Esta app usa tus $ 1.000.000. El Agresivo no pasó por el entrenamiento. El Paciente quedó en $ 0 por día (0,01 operaciones); el Lobo perdió $ 108 por día en promedio. Eso pasó con precios simulados: con el mercado real todavía no hay una medición. Por eso conviene empezar con montos chicos y mirar cuánto se llevan los costos.</p>'
    +'<div class="h2">Aciertos de las señales</div>'
    +'<div class="big-n">'+(rate===null?'—':rate+'%')+'</div>'
    +'<p class="small mute">'+st.n+' señales de la lista de Mercado evaluadas. Acierta si 15 minutos después el precio se movió a su favor, sin contar comisión. 50% es tirar una moneda.</p>'
@@ -618,8 +642,10 @@ async function pollOnce(){
     if(marketOpen()){
       var mk=minKey();
       if(mk!==S.lastMin){
-        if(S.lastMin&&mk-S.lastMin>3)clearHist();
-        S.lastMin=mk;INST.forEach(function(i){pushHist(i.s,S.prices[i.s]);});afterPrices();
+        var gap=S.lastMin?mk-S.lastMin:1;
+        if(gap>30){clearHist();gap=1;}
+        for(var g=1;g<=gap;g++){INST.forEach(function(i){var h=S.hist[i.s],p0=h[h.length-1],p1=S.prices[i.s];pushHist(i.s,p0+(p1-p0)*g/gap);});afterPrices();}
+        S.lastMin=mk;
       }
       S.staleN=ch?0:S.staleN+1;
     }
@@ -630,10 +656,11 @@ async function pollOnce(){
   save();refresh();
 }
 function startMode(){
+  if(!S.mig2){S.advisor='agresivo';S.mig2=1;}
   clearInterval(timer);closeSheet();ui.keys={};ui.sigA=null;
   S.hasLive=false;liveFail=0;
   if(S.mode==='live'){
-    if(S.lastMin&&minKey()-S.lastMin>3)clearHist();
+    if(S.lastMin&&minKey()-S.lastMin>30)clearHist();
     S.lastMin=S.lastMin||0;
   }
   schedule();showTab(ui.tab);
